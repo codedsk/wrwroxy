@@ -14,6 +14,9 @@ import argparse
 import signal
 
 
+# might need to setup a SocketHandler style logger
+# https://docs.python.org/3/howto/logging-cookbook.html#sending-and-receiving-logging-events-across-a-network
+
 def create_log_config(logfile,loglevel,logstream=None):
 
     handlers = ["fileHandler"]
@@ -147,12 +150,17 @@ def check_auth_cookie(hdr):
             cookie_name = 'weber-auth-' + host.replace('.','-')
             break
 
-    r = re.compile('^Cookie: {0}'.format(cookie_name))
+    # our weber-auth cookie could be anywhere in the list
+    # of cookies sent with the request.
+    r = re.compile('^Cookie: .*{0}'.format(cookie_name))
     cookies = filter(r.match,hdr)
+
+    # there should only be one weber-auth cookie sent
     ncookies = len(cookies)
     if ncookies == 0:
         # header does not have a weber-auth cookie, exit
         logger.error('header missing weber-auth cookie.')
+        logger.error("header:\n{0}".format(hdr))
         return False
     elif ncookies > 1:
         # cookie names should be unique, right?
@@ -161,9 +169,12 @@ def check_auth_cookie(hdr):
         logger.error(msg + cookie_str)
         return False
 
+    # grab the header line with our weber-auth cookie
     cookie = cookies[0]
 
     # find the value for the weber-auth cookie
+    # cookies are separated by a semicolon and a space
+    # there is no trailing semicolon for the last cookie
     cvalm = re.search('{0}=([^ \t\n\r\f\v;,]+);?'.format(cookie_name),cookie)
 
     if cvalm is None:
@@ -274,7 +285,7 @@ class ProxyHandler(object):
                     p.register_plugin(check_auth_cookie)
                     p.run(header,body)
 
-                    self.logger.debug("cleaning up forked ProxyConnect")
+                    self.logger.debug("ProxyConnect process exiting")
                     os._exit(0)
                 else:
                     os._exit(0)
