@@ -111,6 +111,11 @@ def parseoptions():
                     action='store_true',
                     dest='stream_log')
 
+    parser.add_argument('--no-auth',
+                    help='Disable authentication for testing purposes',
+                    action='store_false',
+                    dest='authenticate')
+
     parser.add_argument('remainder', nargs=argparse.REMAINDER)
 
     options = parser.parse_args()
@@ -202,12 +207,13 @@ def check_auth_cookie(hdr):
 class ProxyHandler(object):
 
     def __init__(self, listenHost='0.0.0.0', listenPort=8000,
-        forwardHost='127.0.0.1', forwardPort=8001):
+        forwardHost='127.0.0.1', forwardPort=8001, authenticate=True):
 
         self.listenHost = listenHost
         self.listenPort = listenPort
         self.forwardHost = forwardHost
         self.forwardPort = forwardPort
+        self.authenticate = authenticate
 
         self.logger = logging.getLogger(__name__)
 
@@ -282,7 +288,8 @@ class ProxyHandler(object):
                     # register the check_auth_cookie plugin
                     # run the socket connector and packet forwarder
                     p = ProxyConnect(ns,self.forwardHost,self.forwardPort)
-                    p.register_plugin(check_auth_cookie)
+                    if self.authenticate is True:
+                        p.register_plugin(check_auth_cookie)
                     p.run(header,body)
 
                     self.logger.debug("ProxyConnect process exiting")
@@ -438,8 +445,12 @@ if __name__ == "__main__":
 
     # start a ProxyHandler to recieve packets
     # and forward them to a proxied application
-    handler = ProxyHandler(options.listenHost,options.listenPort,
-        options.forwardHost,options.forwardPort)
+    handler = ProxyHandler(
+                options.listenHost,
+                options.listenPort,
+                options.forwardHost,
+                options.forwardPort,
+                options.authenticate)
 
     def sigint_handler(sig,dummy):
         handler.stop()
