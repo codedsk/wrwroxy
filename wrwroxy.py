@@ -267,8 +267,12 @@ class ProxyHandler(object):
                 ns.close()
 
             # request header path should match:
-            # /weber/<SESSION>/<TOKEN>/<CONTAINER>/
+            # /weber/<SESSION>/<TOKEN>/<CONTAINER>/...
+            self.logger.debug("ProxyConnect old header[0]: {}".format(header[0]))
+
+            # remove the weber details
             header[0] = re.sub('/weber/[0-9]+/[^/]+/[0-9]+', '', header[0], 1)
+            self.logger.debug("ProxyConnect new header[0]: {}".format(header[0]))
 
 
             # fork twice so a separate process, managed by init, handles
@@ -379,6 +383,7 @@ class ProxyConnect(object):
     def run(self,header,body):
 
         self.logger.debug("ProxyConnect starting")
+        self.logger.debug("ProxyConnect header[0]: {}".format(header[0]))
 
         # run the plugins
         for fxn in self.plugins:
