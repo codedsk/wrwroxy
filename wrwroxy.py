@@ -12,6 +12,7 @@ import logging
 import logging.config
 import argparse
 import signal
+import errno
 
 
 # might need to setup a SocketHandler style logger
@@ -369,7 +370,12 @@ class ProxyConnect(object):
                     bbuf = bbuf[sent:]
 
         # one socket closed, close the other
-        self.logger.debug("closing all sockets")
+        self._close_sockets()
+
+
+    def _close_sockets(self):
+
+        self.logger.debug("Proxy Connect closing all sockets")
         try:
             self.ns1.close()
         except:
@@ -391,10 +397,7 @@ class ProxyConnect(object):
             if fxn(header) is False:
                 msg = "ProxyConnect exiting due to plugin failure: {}"
                 self.logger.info(msg.format(fxn.__name__))
-                try:
-                    self.ns1.close()
-                except:
-                    pass
+                self._close_sockets()
                 os._exit(1)
 
         # create a new socket that talks to the proxied application
@@ -403,6 +406,8 @@ class ProxyConnect(object):
         # The target may not be running yet.  Try several times to connect.
         # Once connected, break out of the checking loop
         # Otherwise, wait a while before trying again.
+        msg = "ProxyConnect attempting to connect {}:{}"
+        self.logger.info(msg.format(self.forwardHost,self.forwardPort))
         for cnt in xrange(1,80):
             try:
                 self.ns2.connect((self.forwardHost, self.forwardPort))
@@ -410,15 +415,36 @@ class ProxyConnect(object):
             except:
                 time.sleep(0.1)
 
-        msg = "ProxyConnect connected to {}:{}"
+        msg = "ProxyConnect checking connection {}:{}"
         self.logger.info(msg.format(self.forwardHost,self.forwardPort))
 
         # Send the modified initial packet from
         # the client to the proxied application
         chunk = '\r\n'.join(header) + '\r\n\r\n' + body
-        while len(chunk) > 0:
-            sent = self.ns2.send(chunk)
-            chunk = chunk[sent:]
+        try:
+            while len(chunk) > 0:
+                sent = self.ns2.send(chunk)
+                chunk = chunk[sent:]
+        except socket.error, e:
+            # if there is a problem sending the packet,
+            # check to see if we got an EPIPE error
+            # which may indicate that the other side of
+            # the socket wasn't listening and we tried to
+            # write to a closed socket.
+            msg = "ProxyConnect socket error: {}".format(e)
+            self.logger.info(msg)
+            if isinstance(e.args, tuple):
+                if e[0] == errno.EPIPE:
+                    msg = "ProxyConnect failed to connect to {}:{}"
+                    self.logger.info(msg.format(
+                        self.forwardHost,self.forwardPort))
+            self._close_sockets()
+            self.logger.info("ProxyConnect exiting due to socket error")
+            os._exit(1)
+
+        # first packets went through, looks like we are connected.
+        msg = "ProxyConnect connected to {}:{}"
+        self.logger.info(msg.format(self.forwardHost,self.forwardPort))
 
         # Forward all packets from the client to the proxied application
         self._forward_packets()
